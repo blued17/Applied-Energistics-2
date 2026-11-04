@@ -1,8 +1,8 @@
 name: 'Build and Test'
 
 on:
-  push:
-    # Only on branches, not tags/releases
+    push:
+    branches: ["8.4.x-1.16.x"]
     branches:
       - '**'
   pull_request:
