@@ -1,25 +1,8 @@
-/*
- * This file is part of Applied Energistics 2.
- * Copyright (c) 2013 - 2014, AlgorithmX2, All rights reserved.
- *
- * Applied Energistics 2 is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Applied Energistics 2 is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Applied Energistics 2.  If not, see <http://www.gnu.org/licenses/lgpl>.
- */
-
 package appeng.container.guisync;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.Objects;
 
@@ -94,6 +77,8 @@ public abstract class SynchronizedField<T> {
             return new LongField(source, field);
         } else if (fieldType == boolean.class || fieldType == Boolean.class) {
             return new BooleanField(source, field);
+        } else if (PacketWritable.class.isAssignableFrom(fieldType)) {
+            return new PacketWritableField<>(source, field, fieldType);
         } else if (fieldType.isEnum()) {
             return createEnumField(source, field, fieldType.asSubclass(Enum.class));
         } else {
@@ -210,6 +195,44 @@ public abstract class SynchronizedField<T> {
                 return data.readTextComponent();
             } else {
                 return null;
+            }
+        }
+    }
+
+    private static class PacketWritableField<T extends PacketWritable> extends SynchronizedField<T> {
+        private final Constructor<?> constructor;
+
+        private PacketWritableField(Object source, Field field, Class<?> fieldType) {
+            super(source, field);
+            try {
+                this.constructor = fieldType.getConstructor(PacketBuffer.class);
+            } catch (NoSuchMethodException e) {
+                throw new IllegalArgumentException(
+                        "Cannot synchronize " + field + ": " + fieldType + " needs a public constructor(PacketBuffer)",
+                        e);
+            }
+        }
+
+        @Override
+        protected void writeValue(PacketBuffer data, T value) {
+            if (value == null) {
+                data.writeBoolean(false);
+            } else {
+                data.writeBoolean(true);
+                value.writeToPacket(data);
+            }
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        protected T readValue(PacketBuffer data) {
+            if (!data.readBoolean()) {
+                return null;
+            }
+            try {
+                return (T) constructor.newInstance(data);
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException(e);
             }
         }
     }
