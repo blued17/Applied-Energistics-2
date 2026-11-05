@@ -73,7 +73,7 @@ jobs:
           ''')
           PY
       - name: Generate assets
-        run: ./gradlew runData --no-daemon
+        run: mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550 && ./gradlew runData --no-daemon || ./gradlew runData --no-daemon
       - name: Build with Gradle
         run: ./gradlew assemble --no-daemon
       - name: Upload jar
