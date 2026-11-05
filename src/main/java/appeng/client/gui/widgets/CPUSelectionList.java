@@ -160,7 +160,7 @@ public class CPUSelectionList implements ICompositeWidget {
         if (cpu.hasJob()) {
             lines.add(new TranslationTextComponent("gui.appliedenergistics2.CpuStatusCrafting",
                     new StringTextComponent(ReadableNumberConverter.INSTANCE.toWideReadableForm(cpu.getJobAmount()))
-                            .appendString(" ").append(cpu.getJobItem().getDisplayName())));
+                            .appendString(" ").appendSibling(cpu.getJobItem().getDisplayName())));
             String percent = Math.round(cpu.getProgress() * 100) + "%";
             long millis = TimeUnit.NANOSECONDS.toMillis(cpu.getElapsedTimeNanos());
             lines.add(new TranslationTextComponent("gui.appliedenergistics2.CpuStatusCraftedIn", percent,
