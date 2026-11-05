@@ -1,7 +1,10 @@
-name: Build AE2 jar
+name: Build AE2 jar v2
 
 on:
   workflow_dispatch:
+
+env:
+  RELEASE: 8.4.7
 
 jobs:
   build:
@@ -17,13 +20,14 @@ jobs:
         run: chmod +x gradlew
       - name: Download textures
         run: |
-          D=src/main/resources/assets/appliedenergistics2/textures/guis
           B=https://raw.githubusercontent.com/AppliedEnergistics/Applied-Energistics-2/1.21.1/src/main/resources/assets/ae2/textures/guis
-          curl -fL -o $D/cpu_selector.png $B/cpu_selector.png
-          curl -fL -o $D/cpu_icons.png $B/states.png
-      - name: Apply remaining changes
+          curl -fL -o src/main/resources/assets/appliedenergistics2/textures/guis/cpu_selector.png $B/cpu_selector.png
+          curl -fL -o /tmp/states.png $B/states.png
+      - name: Apply changes
         run: |
           python3 - <<'PY'
+          import re
+          # ---------- 1. version + cluster getter + lang + status json (idempotent) ----------
           p = 'src/main/java/appeng/me/cluster/implementations/CraftingCPUCluster.java'
           s = open(p).read()
           if 'getFinalOutput' not in s:
@@ -52,26 +56,60 @@ jobs:
             "$schema": "schema.json",
             "includes": ["crafting_cpu.json"],
             "widgets": {
-              "back": {
-                "left": 213,
-                "top": -4,
-                "hideEdge": true
-              },
-              "selectCpuList": {
-                "left": -88,
-                "top": 0,
-                "width": 94,
-                "height": 164
-              },
-              "selectCpuScrollbar": {
-                "left": -11,
-                "top": 19,
-                "width": 12,
-                "height": 137
-              }
+              "back": {"left": 213, "top": -4, "hideEdge": true},
+              "selectCpuList": {"left": -88, "top": 0, "width": 94, "height": 164},
+              "selectCpuScrollbar": {"left": -11, "top": 19, "width": 12, "height": 137}
             }
           }
           ''')
+
+          # ---------- 2. widget: icons from the selector texture + explicit button colors ----------
+          p = 'src/main/java/appeng/client/gui/widgets/CPUSelectionList.java'
+          s = open(p).read()
+          if 'drawButton(' not in s:
+              def rep(old, new):
+                  global s
+                  assert s.count(old) == 1, 'patch anchor not found exactly once: ' + old
+                  s = s.replace(old, new)
+              rep('ICON_TEXTURE = "guis/cpu_icons.png"', 'ICON_TEXTURE = "guis/cpu_selector.png"')
+              rep('icon(208, 224)', 'icon(100, 50)')
+              rep('icon(208, 234)', 'icon(112, 50)')
+              rep('icon(208, 244)', 'icon(124, 50)')
+              rep('button(selected).dest(x, y).blit(matrices, zIndex);', 'drawButton(matrices, x, y, selected);')
+              rep('selected ? PROGRESS_COLOR_SELECTED : PROGRESS_COLOR', 'selected ? 0xFF3A78B8 : 0xFF9CD3FF')
+              rep('    private void drawScaledText(', '''    private static void drawButton(MatrixStack matrices, int x, int y, boolean selected) {
+                  int shade = selected ? 0xFF708CBA : 0xFF4D4D67;
+                  int light = selected ? 0xFFDAFFFF : 0xFF9A9FB4;
+                  int body = selected ? 0xFF9CD3FF : 0xFF878FA5;
+                  AbstractGui.fill(matrices, x, y, x + BUTTON_WIDTH, y + BUTTON_HEIGHT, shade);
+                  AbstractGui.fill(matrices, x, y, x + BUTTON_WIDTH - 1, y + BUTTON_HEIGHT - 1, light);
+                  AbstractGui.fill(matrices, x + 1, y + 1, x + BUTTON_WIDTH - 1, y + BUTTON_HEIGHT - 1, body);
+              }
+
+              private void drawScaledText(''')
+              open(p, 'w').write(s)
+          PY
+      - name: Merge icons
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install -q pillow
+          /tmp/venv/bin/python - <<'PY'
+          from PIL import Image
+          D = 'src/main/resources/assets/appliedenergistics2/textures/guis/'
+          sel = Image.open(D + 'cpu_selector.png').convert('RGBA')
+          states = Image.open('/tmp/states.png').convert('RGBA')
+          T = 0.3
+          def dark(img):
+              px = img.load()
+              for yy in range(img.height):
+                  for xx in range(img.width):
+                      r, g, b, a = px[xx, yy]
+                      px[xx, yy] = (int(r * T), int(g * T), int(b * T), a)
+              return img
+          for (sx, sy), (dx, dy) in [((208, 224), (100, 50)), ((208, 234), (112, 50)), ((208, 244), (124, 50))]:
+              sel.paste(dark(states.crop((sx, sy, sx + 10, sy + 10))), (dx, dy))
+          sel.save(D + 'cpu_selector.png')
+          print('icons merged')
           PY
       - name: Generate assets
         run: mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550 && ./gradlew runData --no-daemon || ./gradlew runData --no-daemon
