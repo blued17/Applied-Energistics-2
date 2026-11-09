@@ -1,4 +1,4 @@
-name: Build AE2 jar v5
+name: Build AE2 jar v5.1
 
 on:
   workflow_dispatch:
@@ -38,29 +38,29 @@ jobs:
           git config user.name ci
           git add -A
           git commit -q -m "base patches"
-      - name: Build with fluids
-        id: fluids
-        continue-on-error: true
+      - name: Build (drops any extra that does not compile)
+        id: build
         run: |
-          python3 "$(find .github -name fluid.py | head -n 1)"
           mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550
-          ./gradlew runData --no-daemon || ./gradlew runData --no-daemon
-          ./gradlew assemble --no-daemon
-      - name: Upload jar with fluids
-        if: steps.fluids.outcome == 'success'
+          for combo in "fluid preview" "fluid" "preview" "none"; do
+            echo "=== Trying: $combo ==="
+            git reset -q --hard HEAD
+            ok=1
+            if [ "$combo" != "none" ]; then
+              for f in $combo; do
+                python3 "$(find .github -name $f.py | head -n 1)" || ok=0
+              done
+            fi
+            if [ "$ok" = "1" ] && (./gradlew runData --no-daemon || ./gradlew runData --no-daemon) && ./gradlew assemble --no-daemon; then
+              echo "features=${combo// /-}" >> "$GITHUB_OUTPUT"
+              echo "=== Built with: $combo ==="
+              exit 0
+            fi
+            echo "=== Failed with: $combo ==="
+          done
+          exit 1
+      - name: Upload jar
         uses: actions/upload-artifact@v4
         with:
-          name: ae2-jar-fluids
-          path: build/libs/*.jar
-      - name: Rebuild without fluids
-        if: steps.fluids.outcome != 'success'
-        run: |
-          git reset -q --hard HEAD
-          ./gradlew runData --no-daemon || ./gradlew runData --no-daemon
-          ./gradlew assemble --no-daemon
-      - name: Upload jar without fluids
-        if: steps.fluids.outcome != 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ae2-jar
+          name: ae2-jar-${{ steps.build.outputs.features }}
           path: build/libs/*.jar
