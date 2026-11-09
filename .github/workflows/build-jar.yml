@@ -1,4 +1,4 @@
-name: Build AE2 jar v4
+name: Build AE2 jar v5
 
 on:
   workflow_dispatch:
@@ -25,13 +25,13 @@ jobs:
           curl -fL -o /tmp/states.png $B/states.png
       - name: Apply CPU list and pin changes
         run: |
-          python3 .github/patches/cpu.py
-          python3 .github/patches/pins.py
+          python3 "$(find .github -name cpu.py | head -n 1)"
+          python3 "$(find .github -name pins.py | head -n 1)"
       - name: Merge icons
         run: |
           python3 -m venv /tmp/venv
           /tmp/venv/bin/pip install -q pillow
-          /tmp/venv/bin/python .github/patches/icons.py
+          /tmp/venv/bin/python "$(find .github -name icons.py | head -n 1)"
       - name: Save base state
         run: |
           git config user.email ci@example.com
@@ -42,7 +42,7 @@ jobs:
         id: fluids
         continue-on-error: true
         run: |
-          python3 .github/patches/fluid.py
+          python3 "$(find .github -name fluid.py | head -n 1)"
           mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550
           ./gradlew runData --no-daemon || ./gradlew runData --no-daemon
           ./gradlew assemble --no-daemon
