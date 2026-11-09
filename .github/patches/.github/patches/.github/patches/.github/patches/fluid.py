@@ -10,6 +10,278 @@ def edit(path, pairs):
         s = s.replace(old, new)
     open(base + path, 'w').write(s)
 
+IMPORTS = '''package appeng.container.me.items;
+
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraftforge.fluids.FluidAttributes;
+import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.FluidUtil;
+import net.minecraftforge.fluids.capability.IFluidHandler;
+import net.minecraftforge.fluids.capability.IFluidHandlerItem;
+
+import appeng.api.config.Actionable;
+import appeng.api.networking.security.IActionSource;
+import appeng.api.networking.storage.IBaseMonitor;
+import appeng.api.storage.IMEMonitor;
+import appeng.api.storage.IMEMonitorHandlerReceiver;
+import appeng.api.storage.channels.IFluidStorageChannel;
+import appeng.api.storage.data.IAEFluidStack;
+import appeng.api.storage.data.IItemList;
+import appeng.fluids.items.FluidDummyItem;
+import appeng.fluids.util.AEFluidStack;
+'''
+
+CODE = '''                Api.instance().storage().getStorageChannel(IItemStorageChannel.class));
+        this.fluidMonitor = createFluidMonitor(host);
+    }
+
+    // ---- Fluids are shown in the grid as dummy fluid items ----
+
+    private final FluidReceiver fluidReceiver = new FluidReceiver();
+    private final IMEMonitor<IAEFluidStack> fluidMonitor;
+
+    private IMEMonitor<IAEFluidStack> createFluidMonitor(ITerminalHost host) {
+        if (!isServer()) {
+            return null;
+        }
+        IMEMonitor<IAEFluidStack> result = host
+                .getInventory(Api.instance().storage().getStorageChannel(IFluidStorageChannel.class));
+        if (result != null) {
+            result.addListener(this.fluidReceiver, null);
+        }
+        return result;
+    }
+
+    /**
+     * Fluids are identified by a dummy item with an amount of 1, the real amount is the stack size.
+     */
+    private static IAEItemStack toDummy(IAEFluidStack fluid) {
+        IAEFluidStack key = fluid.copy();
+        key.setStackSize(1);
+        ItemStack representation = key.asItemStackRepresentation();
+        if (representation.isEmpty()) {
+            return null;
+        }
+        return AEItemStack.fromItemStack(representation);
+    }
+
+    private class FluidReceiver implements IMEMonitorHandlerReceiver<IAEFluidStack> {
+        @Override
+        public boolean isValid(Object verificationToken) {
+            return true;
+        }
+
+        @Override
+        public void postChange(IBaseMonitor<IAEFluidStack> monitor, Iterable<IAEFluidStack> change,
+                IActionSource source) {
+            for (IAEFluidStack fluid : change) {
+                IAEItemStack dummy = toDummy(fluid);
+                if (dummy != null) {
+                    addExtraChange(dummy);
+                }
+            }
+        }
+
+        @Override
+        public void onListUpdate() {
+            ItemTerminalContainer.this.onListUpdate();
+        }
+    }
+
+    @Override
+    protected IItemList<IAEItemStack> getStorageListForClient() {
+        IItemList<IAEItemStack> items = super.getStorageListForClient();
+        if (this.fluidMonitor == null) {
+            return items;
+        }
+        IItemList<IAEFluidStack> fluids = this.fluidMonitor.getStorageList();
+        if (fluids.isEmpty()) {
+            return items;
+        }
+        IItemList<IAEItemStack> merged = this.getStorageChannel().createList();
+        for (IAEItemStack item : items) {
+            merged.add(item.copy());
+        }
+        for (IAEFluidStack fluid : fluids) {
+            IAEItemStack dummy = toDummy(fluid);
+            if (dummy != null) {
+                dummy.setStackSize(fluid.getStackSize());
+                merged.add(dummy);
+            }
+        }
+        return merged;
+    }
+
+    @Override
+    public void onContainerClosed(PlayerEntity player) {
+        super.onContainerClosed(player);
+        if (this.fluidMonitor != null) {
+            this.fluidMonitor.removeListener(this.fluidReceiver);
+        }
+    }
+
+    /**
+     * Clicking a fluid hands the player a filled bucket. The empty bucket is taken from the system, so the system
+     * must have one stored, otherwise nothing happens.
+     */
+    private void handleFluidInteraction(ServerPlayerEntity player, IAEItemStack dummy, InventoryAction action) {
+        ItemStack held = player.inventory.getItemStack();
+        if (!held.isEmpty()) {
+            // Holding something: use the normal logic to put it into the network
+            handleNetworkInteraction(player, null, action);
+            return;
+        }
+        if (this.fluidMonitor == null || this.powerSource == null) {
+            return;
+        }
+        if (action != InventoryAction.PICKUP_OR_SET_DOWN && action != InventoryAction.SHIFT_CLICK) {
+            return;
+        }
+
+        ItemStack dummyStack = dummy.getDefinition();
+        FluidStack fluidStack = ((FluidDummyItem) dummyStack.getItem()).getFluidStack(dummyStack);
+        if (fluidStack.isEmpty()) {
+            return;
+        }
+        Item filledBucket = fluidStack.getFluid().getFilledBucket();
+        if (filledBucket == Items.AIR) {
+            return;
+        }
+
+        // The system must have an empty bucket
+        IAEItemStack emptyBucket = AEItemStack.fromItemStack(new ItemStack(Items.BUCKET));
+        if (emptyBucket == null) {
+            return;
+        }
+        emptyBucket.setStackSize(1);
+        IAEItemStack bucketCheck = Platform.poweredExtraction(this.powerSource, this.monitor, emptyBucket.copy(),
+                this.getActionSource(), Actionable.SIMULATE);
+        if (bucketCheck == null || bucketCheck.getStackSize() < 1) {
+            return;
+        }
+
+        IAEFluidStack request = AEFluidStack
+                .fromFluidStack(new FluidStack(fluidStack.getFluid(), FluidAttributes.BUCKET_VOLUME));
+        if (request == null) {
+            return;
+        }
+        IAEFluidStack possible = Platform.poweredExtraction(this.powerSource, this.fluidMonitor, request,
+                this.getActionSource(), Actionable.SIMULATE);
+        if (possible == null || possible.getStackSize() < FluidAttributes.BUCKET_VOLUME) {
+            return;
+        }
+        IAEFluidStack extracted = Platform.poweredExtraction(this.powerSource, this.fluidMonitor, request,
+                this.getActionSource());
+        if (extracted == null) {
+            return;
+        }
+        if (extracted.getStackSize() < FluidAttributes.BUCKET_VOLUME) {
+            this.fluidMonitor.injectItems(extracted, Actionable.MODULATE, this.getActionSource());
+            return;
+        }
+
+        IAEItemStack bucket = Platform.poweredExtraction(this.powerSource, this.monitor, emptyBucket.copy(),
+                this.getActionSource());
+        if (bucket == null || bucket.getStackSize() < 1) {
+            // Could not get the bucket after all: give the fluid back
+            this.fluidMonitor.injectItems(extracted, Actionable.MODULATE, this.getActionSource());
+            return;
+        }
+
+        ItemStack filled = new ItemStack(filledBucket);
+        if (action == InventoryAction.PICKUP_OR_SET_DOWN) {
+            player.inventory.setItemStack(filled);
+            this.updateHeld(player);
+        } else if (!player.inventory.addItemStackToInventory(filled)) {
+            player.dropItem(filled, false);
+        }
+    }
+
+    /**
+     * Right-clicking with a filled bucket puts its fluid back into the system, if the system can store all of it.
+     * Otherwise the bucket keeps its fluid. The emptied bucket goes into the system if it has room.
+     *
+     * @return true if the held item contains a fluid (so the click is handled here and nowhere else).
+     */
+    private boolean handleBucketReturn(ServerPlayerEntity player) {
+        ItemStack held = player.inventory.getItemStack();
+        if (held.isEmpty() || this.fluidMonitor == null || this.powerSource == null) {
+            return false;
+        }
+        ItemStack single = held.copy();
+        single.setCount(1);
+        IFluidHandlerItem handler = FluidUtil.getFluidHandler(single).orElse(null);
+        if (handler == null) {
+            return false;
+        }
+        FluidStack contained = handler.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
+        if (contained.isEmpty()) {
+            return false;
+        }
+
+        IAEFluidStack toInsert = AEFluidStack.fromFluidStack(contained);
+        if (toInsert == null) {
+            return true;
+        }
+        IAEFluidStack leftover = Platform.poweredInsert(this.powerSource, this.fluidMonitor, toInsert.copy(),
+                this.getActionSource(), Actionable.SIMULATE);
+        if (leftover != null && leftover.getStackSize() > 0) {
+            // No room for all of it: the bucket keeps its fluid
+            return true;
+        }
+        leftover = Platform.poweredInsert(this.powerSource, this.fluidMonitor, toInsert.copy(),
+                this.getActionSource());
+        if (leftover != null && leftover.getStackSize() > 0) {
+            // Only a part was stored: take it back out, the bucket keeps its fluid
+            IAEFluidStack inserted = toInsert.copy();
+            inserted.setStackSize(inserted.getStackSize() - leftover.getStackSize());
+            if (inserted.getStackSize() > 0) {
+                this.fluidMonitor.extractItems(inserted, Actionable.MODULATE, this.getActionSource());
+            }
+            return true;
+        }
+
+        // The fluid is in the system: empty the bucket
+        handler.drain(contained, IFluidHandler.FluidAction.EXECUTE);
+        ItemStack emptied = handler.getContainer();
+
+        held.shrink(1);
+        if (held.isEmpty()) {
+            player.inventory.setItemStack(ItemStack.EMPTY);
+        }
+
+        // The empty bucket goes back into the system, or to the player if the system is full
+        IAEItemStack emptiedAe = emptied.isEmpty() ? null : AEItemStack.fromItemStack(emptied);
+        IAEItemStack notStored = emptiedAe == null ? null
+                : Platform.poweredInsert(this.powerSource, this.monitor, emptiedAe, this.getActionSource());
+        if (notStored != null && notStored.getStackSize() > 0) {
+            ItemStack back = notStored.createItemStack();
+            if (player.inventory.getItemStack().isEmpty()) {
+                player.inventory.setItemStack(back);
+            } else if (!player.inventory.addItemStackToInventory(back)) {
+                player.dropItem(back, false);
+            }
+        }
+        this.updateHeld(player);
+        return true;
+    }
+'''
+
+HEADER_OLD = '    protected void handleNetworkInteraction(ServerPlayerEntity player, @Nullable IAEItemStack stack,\n            InventoryAction action) {\n'
+HEADER_NEW = HEADER_OLD + '''
+        if (action == InventoryAction.SPLIT_OR_PLACE_SINGLE && handleBucketReturn(player)) {
+            return;
+        }
+
+        if (stack != null && stack.getDefinition().getItem() instanceof FluidDummyItem) {
+            handleFluidInteraction(player, stack, action);
+            return;
+        }
+'''
+
 edit('common/MEMonitorableContainer.java', [
     ('                    IItemList<T> storageList = monitor.getStorageList();\n',
      '                    IItemList<T> storageList = getStorageListForClient();\n', 1),
@@ -32,193 +304,8 @@ edit('common/MEMonitorableContainer.java', [
 ])
 
 edit('items/ItemTerminalContainer.java', [
-    ('package appeng.container.me.items;\n',
-     'package appeng.container.me.items;\n'
-     '\n'
-     'import net.minecraft.entity.player.PlayerEntity;\n'
-     'import net.minecraft.item.Item;\n'
-     'import net.minecraft.item.ItemStack;\n'
-     'import net.minecraft.item.Items;\n'
-     'import net.minecraftforge.fluids.FluidAttributes;\n'
-     'import net.minecraftforge.fluids.FluidStack;\n'
-     '\n'
-     'import appeng.api.config.Actionable;\n'
-     'import appeng.api.networking.security.IActionSource;\n'
-     'import appeng.api.networking.storage.IBaseMonitor;\n'
-     'import appeng.api.storage.IMEMonitor;\n'
-     'import appeng.api.storage.IMEMonitorHandlerReceiver;\n'
-     'import appeng.api.storage.channels.IFluidStorageChannel;\n'
-     'import appeng.api.storage.data.IAEFluidStack;\n'
-     'import appeng.api.storage.data.IItemList;\n'
-     'import appeng.fluids.items.FluidDummyItem;\n'
-     'import appeng.fluids.util.AEFluidStack;\n', 1),
-    ('                Api.instance().storage().getStorageChannel(IItemStorageChannel.class));\n    }\n',
-     '                Api.instance().storage().getStorageChannel(IItemStorageChannel.class));\n'
-     '        this.fluidMonitor = createFluidMonitor(host);\n'
-     '    }\n'
-     '\n'
-     '    // ---- Fluids are shown in the grid as dummy fluid items ----\n'
-     '\n'
-     '    private final FluidReceiver fluidReceiver = new FluidReceiver();\n'
-     '    private final IMEMonitor<IAEFluidStack> fluidMonitor;\n'
-     '\n'
-     '    private IMEMonitor<IAEFluidStack> createFluidMonitor(ITerminalHost host) {\n'
-     '        if (!isServer()) {\n'
-     '            return null;\n'
-     '        }\n'
-     '        IMEMonitor<IAEFluidStack> result = host\n'
-     '                .getInventory(Api.instance().storage().getStorageChannel(IFluidStorageChannel.class));\n'
-     '        if (result != null) {\n'
-     '            result.addListener(this.fluidReceiver, null);\n'
-     '        }\n'
-     '        return result;\n'
-     '    }\n'
-     '\n'
-     '    /**\n'
-     '     * Fluids are identified by a dummy item with an amount of 1, the real amount is the stack size.\n'
-     '     */\n'
-     '    private static IAEItemStack toDummy(IAEFluidStack fluid) {\n'
-     '        IAEFluidStack key = fluid.copy();\n'
-     '        key.setStackSize(1);\n'
-     '        ItemStack representation = key.asItemStackRepresentation();\n'
-     '        if (representation.isEmpty()) {\n'
-     '            return null;\n'
-     '        }\n'
-     '        return AEItemStack.fromItemStack(representation);\n'
-     '    }\n'
-     '\n'
-     '    private class FluidReceiver implements IMEMonitorHandlerReceiver<IAEFluidStack> {\n'
-     '        @Override\n'
-     '        public boolean isValid(Object verificationToken) {\n'
-     '            return true;\n'
-     '        }\n'
-     '\n'
-     '        @Override\n'
-     '        public void postChange(IBaseMonitor<IAEFluidStack> monitor, Iterable<IAEFluidStack> change,\n'
-     '                IActionSource source) {\n'
-     '            for (IAEFluidStack fluid : change) {\n'
-     '                IAEItemStack dummy = toDummy(fluid);\n'
-     '                if (dummy != null) {\n'
-     '                    addExtraChange(dummy);\n'
-     '                }\n'
-     '            }\n'
-     '        }\n'
-     '\n'
-     '        @Override\n'
-     '        public void onListUpdate() {\n'
-     '            ItemTerminalContainer.this.onListUpdate();\n'
-     '        }\n'
-     '    }\n'
-     '\n'
-     '    @Override\n'
-     '    protected IItemList<IAEItemStack> getStorageListForClient() {\n'
-     '        IItemList<IAEItemStack> items = super.getStorageListForClient();\n'
-     '        if (this.fluidMonitor == null) {\n'
-     '            return items;\n'
-     '        }\n'
-     '        IItemList<IAEFluidStack> fluids = this.fluidMonitor.getStorageList();\n'
-     '        if (fluids.isEmpty()) {\n'
-     '            return items;\n'
-     '        }\n'
-     '        IItemList<IAEItemStack> merged = this.getStorageChannel().createList();\n'
-     '        for (IAEItemStack item : items) {\n'
-     '            merged.add(item.copy());\n'
-     '        }\n'
-     '        for (IAEFluidStack fluid : fluids) {\n'
-     '            IAEItemStack dummy = toDummy(fluid);\n'
-     '            if (dummy != null) {\n'
-     '                dummy.setStackSize(fluid.getStackSize());\n'
-     '                merged.add(dummy);\n'
-     '            }\n'
-     '        }\n'
-     '        return merged;\n'
-     '    }\n'
-     '\n'
-     '    @Override\n'
-     '    public void onContainerClosed(PlayerEntity player) {\n'
-     '        super.onContainerClosed(player);\n'
-     '        if (this.fluidMonitor != null) {\n'
-     '            this.fluidMonitor.removeListener(this.fluidReceiver);\n'
-     '        }\n'
-     '    }\n'
-     '\n'
-     '    /**\n'
-     '     * Clicking a fluid hands the player a filled bucket (using an empty bucket from the cursor or inventory).\n'
-     '     */\n'
-     '    private void handleFluidInteraction(ServerPlayerEntity player, IAEItemStack dummy, InventoryAction action) {\n'
-     '        ItemStack held = player.inventory.getItemStack();\n'
-     '        if (!held.isEmpty()) {\n'
-     '            // Holding something: use the normal logic to put it into the network\n'
-     '            handleNetworkInteraction(player, null, action);\n'
-     '            return;\n'
-     '        }\n'
-     '        if (this.fluidMonitor == null || this.powerSource == null) {\n'
-     '            return;\n'
-     '        }\n'
-     '        if (action != InventoryAction.PICKUP_OR_SET_DOWN && action != InventoryAction.SHIFT_CLICK) {\n'
-     '            return;\n'
-     '        }\n'
-     '\n'
-     '        ItemStack dummyStack = dummy.getDefinition();\n'
-     '        FluidStack fluidStack = ((FluidDummyItem) dummyStack.getItem()).getFluidStack(dummyStack);\n'
-     '        if (fluidStack.isEmpty()) {\n'
-     '            return;\n'
-     '        }\n'
-     '        Item filledBucket = fluidStack.getFluid().getFilledBucket();\n'
-     '        if (filledBucket == Items.AIR) {\n'
-     '            return;\n'
-     '        }\n'
-     '\n'
-     '        int bucketSlot = -1;\n'
-     '        if (!player.isCreative()) {\n'
-     '            for (int i = 0; i < player.inventory.mainInventory.size(); i++) {\n'
-     '                if (player.inventory.mainInventory.get(i).getItem() == Items.BUCKET) {\n'
-     '                    bucketSlot = i;\n'
-     '                    break;\n'
-     '                }\n'
-     '            }\n'
-     '            if (bucketSlot < 0) {\n'
-     '                return;\n'
-     '            }\n'
-     '        }\n'
-     '\n'
-     '        IAEFluidStack request = AEFluidStack\n'
-     '                .fromFluidStack(new FluidStack(fluidStack.getFluid(), FluidAttributes.BUCKET_VOLUME));\n'
-     '        if (request == null) {\n'
-     '            return;\n'
-     '        }\n'
-     '        IAEFluidStack possible = Platform.poweredExtraction(this.powerSource, this.fluidMonitor, request,\n'
-     '                this.getActionSource(), Actionable.SIMULATE);\n'
-     '        if (possible == null || possible.getStackSize() < FluidAttributes.BUCKET_VOLUME) {\n'
-     '            return;\n'
-     '        }\n'
-     '        IAEFluidStack extracted = Platform.poweredExtraction(this.powerSource, this.fluidMonitor, request,\n'
-     '                this.getActionSource());\n'
-     '        if (extracted == null) {\n'
-     '            return;\n'
-     '        }\n'
-     '        if (extracted.getStackSize() < FluidAttributes.BUCKET_VOLUME) {\n'
-     '            this.fluidMonitor.injectItems(extracted, Actionable.MODULATE, this.getActionSource());\n'
-     '            return;\n'
-     '        }\n'
-     '\n'
-     '        if (bucketSlot >= 0) {\n'
-     '            player.inventory.decrStackSize(bucketSlot, 1);\n'
-     '        }\n'
-     '        ItemStack filled = new ItemStack(filledBucket);\n'
-     '        if (action == InventoryAction.PICKUP_OR_SET_DOWN) {\n'
-     '            player.inventory.setItemStack(filled);\n'
-     '            this.updateHeld(player);\n'
-     '        } else if (!player.inventory.addItemStackToInventory(filled)) {\n'
-     '            player.dropItem(filled, false);\n'
-     '        }\n'
-     '    }\n', 1),
-    ('    protected void handleNetworkInteraction(ServerPlayerEntity player, @Nullable IAEItemStack stack,\n            InventoryAction action) {\n',
-     '    protected void handleNetworkInteraction(ServerPlayerEntity player, @Nullable IAEItemStack stack,\n            InventoryAction action) {\n'
-     '\n'
-     '        if (stack != null && stack.getDefinition().getItem() instanceof FluidDummyItem) {\n'
-     '            handleFluidInteraction(player, stack, action);\n'
-     '            return;\n'
-     '        }\n', 1),
+    ('package appeng.container.me.items;\n', IMPORTS, 1),
+    ('                Api.instance().storage().getStorageChannel(IItemStorageChannel.class));\n    }\n', CODE, 1),
+    (HEADER_OLD, HEADER_NEW, 1),
 ])
 print('fluids applied')
