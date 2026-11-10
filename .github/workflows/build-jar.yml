@@ -1,4 +1,4 @@
-name: Build AE2 jar v5.2
+name: Build AE2 jar v5.3
 
 on:
   workflow_dispatch:
@@ -42,7 +42,7 @@ jobs:
         id: build
         run: |
           mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550
-          features="fluid preview math"
+          features="fluid preview math tooltips"
           for attempt in 1 2 3 4 5 6; do
             echo "=== Attempt $attempt, features: ${features:-none} ==="
             git reset -q --hard HEAD
@@ -75,6 +75,7 @@ jobs:
                 fluid) pat="ItemTerminalContainer.java|MEMonitorableContainer.java" ;;
                 preview) pat="PartPlacementPreview.java|ClientHelper.java" ;;
                 math) pat="NumberEntryWidget.java|MathExpressionParser.java" ;;
+                tooltips) pat="CellTooltips.java|ApiClientHelper.java|AEBasePoweredItem.java" ;;
                 *) pat="@@none@@" ;;
               esac
               if echo "$errs" | grep -Eq "$pat"; then
