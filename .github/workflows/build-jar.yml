@@ -1,4 +1,4 @@
-name: Build AE2 jar v5.1
+name: Build AE2 jar v5.2
 
 on:
   workflow_dispatch:
@@ -42,21 +42,53 @@ jobs:
         id: build
         run: |
           mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550
-          for combo in "fluid preview" "fluid" "preview" "none"; do
-            echo "=== Trying: $combo ==="
+          features="fluid preview math"
+          for attempt in 1 2 3 4 5 6; do
+            echo "=== Attempt $attempt, features: ${features:-none} ==="
             git reset -q --hard HEAD
-            ok=1
-            if [ "$combo" != "none" ]; then
-              for f in $combo; do
-                python3 "$(find .github -name $f.py | head -n 1)" || ok=0
-              done
+            git clean -fdq src
+            failed=""
+            for f in $features; do
+              if ! python3 "$(find .github -name $f.py | head -n 1)"; then
+                failed=$f
+                break
+              fi
+            done
+            if [ -n "$failed" ]; then
+              echo "Patch $failed could not be applied, dropping it"
+              features=$(echo " $features " | sed "s/ $failed / /" | xargs)
+              continue
             fi
-            if [ "$ok" = "1" ] && (./gradlew runData --no-daemon || ./gradlew runData --no-daemon) && ./gradlew assemble --no-daemon; then
-              echo "features=${combo// /-}" >> "$GITHUB_OUTPUT"
-              echo "=== Built with: $combo ==="
+            if ( ( ./gradlew runData --no-daemon || ./gradlew runData --no-daemon ) && ./gradlew assemble --no-daemon ) 2>&1 | tee build.log; then
+              echo "features=$(echo ${features:-none} | tr ' ' '-')" >> "$GITHUB_OUTPUT"
+              echo "=== Built with: ${features:-none} ==="
               exit 0
             fi
-            echo "=== Failed with: $combo ==="
+            if [ -z "$features" ]; then
+              echo "The base build failed"
+              exit 1
+            fi
+            errs=$(grep "error:" build.log || true)
+            new=""
+            for f in $features; do
+              case "$f" in
+                fluid) pat="ItemTerminalContainer.java|MEMonitorableContainer.java" ;;
+                preview) pat="PartPlacementPreview.java|ClientHelper.java" ;;
+                math) pat="NumberEntryWidget.java|MathExpressionParser.java" ;;
+                *) pat="@@none@@" ;;
+              esac
+              if echo "$errs" | grep -Eq "$pat"; then
+                echo "Dropping $f because of compile errors"
+              else
+                new="$new $f"
+              fi
+            done
+            new=$(echo $new)
+            if [ "$new" = "$features" ]; then
+              echo "Could not tell which extra failed, dropping the last one"
+              new=$(echo $features | awk '{$NF=""; print $0}' | xargs)
+            fi
+            features=$new
           done
           exit 1
       - name: Upload jar
