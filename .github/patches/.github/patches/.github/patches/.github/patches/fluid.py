@@ -16,6 +16,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.util.text.StringTextComponent;
 import net.minecraftforge.fluids.FluidAttributes;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.FluidUtil;
@@ -123,6 +124,10 @@ CODE = '''                Api.instance().storage().getStorageChannel(IItemStorag
         }
     }
 
+    private static void say(ServerPlayerEntity player, String message) {
+        player.sendStatusMessage(new StringTextComponent(message), true);
+    }
+
     /**
      * Clicking a fluid hands the player a filled bucket. The empty bucket is taken from the system, so the system
      * must have one stored, otherwise nothing happens.
@@ -135,6 +140,7 @@ CODE = '''                Api.instance().storage().getStorageChannel(IItemStorag
             return;
         }
         if (this.fluidMonitor == null || this.powerSource == null) {
+            say(player, "This terminal cannot access fluids");
             return;
         }
         if (action != InventoryAction.PICKUP_OR_SET_DOWN && action != InventoryAction.SHIFT_CLICK) {
@@ -148,6 +154,7 @@ CODE = '''                Api.instance().storage().getStorageChannel(IItemStorag
         }
         Item filledBucket = fluidStack.getFluid().getFilledBucket();
         if (filledBucket == Items.AIR) {
+            say(player, "This fluid has no bucket");
             return;
         }
 
@@ -160,6 +167,7 @@ CODE = '''                Api.instance().storage().getStorageChannel(IItemStorag
         IAEItemStack bucketCheck = Platform.poweredExtraction(this.powerSource, this.monitor, emptyBucket.copy(),
                 this.getActionSource(), Actionable.SIMULATE);
         if (bucketCheck == null || bucketCheck.getStackSize() < 1) {
+            say(player, "The system has no empty bucket");
             return;
         }
 
@@ -171,11 +179,13 @@ CODE = '''                Api.instance().storage().getStorageChannel(IItemStorag
         IAEFluidStack possible = Platform.poweredExtraction(this.powerSource, this.fluidMonitor, request,
                 this.getActionSource(), Actionable.SIMULATE);
         if (possible == null || possible.getStackSize() < FluidAttributes.BUCKET_VOLUME) {
+            say(player, "The system has less than 1000 mB of this fluid");
             return;
         }
         IAEFluidStack extracted = Platform.poweredExtraction(this.powerSource, this.fluidMonitor, request,
                 this.getActionSource());
         if (extracted == null) {
+            say(player, "Could not extract the fluid");
             return;
         }
         if (extracted.getStackSize() < FluidAttributes.BUCKET_VOLUME) {
@@ -230,12 +240,14 @@ CODE = '''                Api.instance().storage().getStorageChannel(IItemStorag
                 this.getActionSource(), Actionable.SIMULATE);
         if (leftover != null && leftover.getStackSize() > 0) {
             // No room for all of it: the bucket keeps its fluid
+            say(player, "No room for this fluid in the system");
             return true;
         }
         leftover = Platform.poweredInsert(this.powerSource, this.fluidMonitor, toInsert.copy(),
                 this.getActionSource());
         if (leftover != null && leftover.getStackSize() > 0) {
             // Only a part was stored: take it back out, the bucket keeps its fluid
+            say(player, "No room for this fluid in the system");
             IAEFluidStack inserted = toInsert.copy();
             inserted.setStackSize(inserted.getStackSize() - leftover.getStackSize());
             if (inserted.getStackSize() > 0) {
