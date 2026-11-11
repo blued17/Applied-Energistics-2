@@ -2,7 +2,7 @@ from PIL import Image
 D = 'src/main/resources/assets/appliedenergistics2/textures/guis/'
 sel = Image.open(D + 'cpu_selector.png').convert('RGBA')
 states = Image.open('/tmp/states.png').convert('RGBA')
-T = 0.3
+T = 1.0
 def dark(img):
     px = img.load()
     for yy in range(img.height):
