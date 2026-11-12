@@ -1,4 +1,4 @@
-name: Build AE2 jar v5.4
+name: Build AE2 jar v5.6
 
 on:
   workflow_dispatch:
@@ -23,6 +23,9 @@ jobs:
           B=https://raw.githubusercontent.com/AppliedEnergistics/Applied-Energistics-2/1.21.1/src/main/resources/assets/ae2/textures/guis
           curl -fL -o src/main/resources/assets/appliedenergistics2/textures/guis/cpu_selector.png $B/cpu_selector.png
           curl -fL -o /tmp/states.png $B/states.png
+          R=https://raw.githubusercontent.com/AppliedEnergistics/Applied-Energistics-2/1.21.1/src/main/resources/assets/ae2
+          curl -fL -o /tmp/crg_model.json $R/models/block/crystal_resonance_generator.json
+          curl -fL -o /tmp/crg.png $R/textures/block/crg.png
       - name: Apply CPU list and pin changes
         run: |
           python3 "$(find .github -name cpu.py | head -n 1)"
@@ -42,8 +45,8 @@ jobs:
         id: build
         run: |
           mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550
-          features="fluid preview math tooltips lock"
-          for attempt in 1 2 3 4 5 6 7; do
+          features="fluid preview math tooltips lock crg growth cellpreview"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
             echo "=== Attempt $attempt, features: ${features:-none} ==="
             git reset -q --hard HEAD
             git clean -fdq src
@@ -73,10 +76,13 @@ jobs:
             for f in $features; do
               case "$f" in
                 fluid) pat="ItemTerminalContainer.java|MEMonitorableContainer.java" ;;
-                preview) pat="PartPlacementPreview.java|ClientHelper.java" ;;
+                preview) pat="PartPlacementPreview.java" ;;
                 math) pat="NumberEntryWidget.java|MathExpressionParser.java" ;;
-                tooltips) pat="CellTooltips.java|ApiClientHelper.java|AEBasePoweredItem.java" ;;
+                tooltips) pat="CellTooltips.java|AEBasePoweredItem.java" ;;
                 lock) pat="LockCraftingMode.java|DualityInterface.java|InterfaceScreen.java|InterfaceContainer.java|SettingToggleButton.java|ButtonToolTips.java|Settings.java" ;;
+                crg) pat="CrystalResonanceGeneratorBlock.java|CrystalResonanceGeneratorTileEntity.java|ApiBlocks.java" ;;
+                growth) pat="QuartzGrowthAcceleratorTileEntity.java" ;;
+                cellpreview) pat="CellPreviewTooltip.java" ;;
                 *) pat="@@none@@" ;;
               esac
               if echo "$errs" | grep -Eq "$pat"; then
