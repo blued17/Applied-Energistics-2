@@ -1,4 +1,4 @@
-name: Build AE2 jar v6
+name: Build AE2 jar v11
 
 on:
   workflow_dispatch:
@@ -62,7 +62,7 @@ jobs:
               features=$(echo " $features " | sed "s/ $failed / /" | xargs)
               continue
             fi
-            if ( ( ./gradlew build --no-daemon || ./gradlew runData --no-daemon ) && ./gradlew assemble --no-daemon ) 2>&1 | tee build.log; then
+            if ( ( ./gradlew runData --no-daemon || ./gradlew runData --no-daemon ) && ./gradlew assemble --no-daemon ) 2>&1 | tee build.log; then
               echo "features=$(echo ${features:-none} | tr ' ' '-')" >> "$GITHUB_OUTPUT"
               echo "=== Built with: ${features:-none} ==="
               exit 0
