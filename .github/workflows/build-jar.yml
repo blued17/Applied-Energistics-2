@@ -99,8 +99,12 @@ jobs:
             features=$new
           done
           exit 1
-      - name: Upload jar
+            - name: Upload jar
         uses: actions/upload-artifact@v4
         with:
           name: ae2-jar-${{ steps.build.outputs.features }}
-          path: build/libs/*.jar
+          path: |
+            build/libs/*.jar
+            build/subprojects/*/build/libs/*.jar
+            **/build/libs/*.jar
+            
