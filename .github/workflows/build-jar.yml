@@ -1,4 +1,4 @@
-name: Build AE2 jar v11
+name: Build AE2 jar v6
 
 on:
   workflow_dispatch:
@@ -44,6 +44,7 @@ jobs:
       - name: Build (drops any extra that does not compile)
         id: build
         run: |
+          set -o pipefail
           mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550
           features="fluid preview math tooltips lock crg growth cellpreview highlight"
           for attempt in 1 2 3 4 5 6 7 8 9 10 11; do
@@ -62,7 +63,8 @@ jobs:
               features=$(echo " $features " | sed "s/ $failed / /" | xargs)
               continue
             fi
-            if ( ( ./gradlew runData --no-daemon || ./gradlew runData --no-daemon ) && ./gradlew assemble --no-daemon ) 2>&1 | tee build.log; then
+            rm -rf build/libs
+            if ( ( ./gradlew runData --no-daemon || ./gradlew runData --no-daemon ) && ./gradlew assemble --no-daemon ) 2>&1 | tee build.log && ls build/libs/*.jar > /dev/null 2>&1; then
               echo "features=$(echo ${features:-none} | tr ' ' '-')" >> "$GITHUB_OUTPUT"
               echo "=== Built with: ${features:-none} ==="
               exit 0
@@ -104,6 +106,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ae2-jar-${{ steps.build.outputs.features }}
-          path: '**/build/libs/*.jar'
-          if-no-files-found: error
-          
+          path: build/libs/*.jar
