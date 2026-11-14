@@ -1,4 +1,4 @@
-name: Build AE2 jar v6
+name: Build AE2 jar v6.0.1
 
 on:
   workflow_dispatch:
@@ -46,8 +46,8 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550
-          features="fluid preview math tooltips lock crg growth cellpreview highlight"
-          for attempt in 1 2 3 4 5 6 7 8 9 10 11; do
+          features="fluid preview math tooltips lock crg growth cellpreview cellfix highlight controller search"
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
             echo "=== Attempt $attempt, features: ${features:-none} ==="
             git reset -q --hard HEAD
             git clean -fdq src
@@ -86,6 +86,9 @@ jobs:
                 growth) pat="QuartzGrowthAcceleratorTileEntity.java" ;;
                 cellpreview) pat="CellPreviewTooltip.java" ;;
                 highlight) pat="AEBaseScreen.java" ;;
+                cellfix) pat="CellPreviewTooltip.java" ;;
+                controller) pat="ControllerBlock.java|ControllerTileEntity.java" ;;
+                search) pat="Repo.java" ;;
                 *) pat="@@none@@" ;;
               esac
               if echo "$errs" | grep -Eq "$pat"; then
