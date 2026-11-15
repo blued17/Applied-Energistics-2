@@ -1,7 +1,12 @@
-name: Build AE2 jar v6.0.1
+name: Build AE2 jar v6.0.2
 
 on:
   workflow_dispatch:
+    inputs:
+      features:
+        description: 'Extras to include, separated by spaces. Empty = all. Type none for none.'
+        required: false
+        default: ''
 
 env:
   RELEASE: 8.4.7
@@ -46,7 +51,12 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/fg_cache/de/oceanlabs/mcp/mcp_config/1.16.5-20210115.111550
-          features="fluid preview math tooltips lock crg growth cellpreview cellfix highlight controller search"
+          features="${{ github.event.inputs.features }}"
+          if [ -z "$features" ]; then
+            features="fluid preview math tooltips lock crg growth cellpreview cellfix highlight controller search"
+          elif [ "$features" = "none" ]; then
+            features=""
+          fi
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
             echo "=== Attempt $attempt, features: ${features:-none} ==="
             git reset -q --hard HEAD
