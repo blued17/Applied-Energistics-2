@@ -125,20 +125,27 @@ patch(DUAL, [
      '            }\n'
      '        }\n'
      '        this.readConfig();\n', 1),
-    ('    public boolean pushPattern(final ICraftingPatternDetails patternDetails, final CraftingInventory table) {\n',
-     '    public boolean pushPattern(final ICraftingPatternDetails patternDetails, final CraftingInventory table) {\n'
+    ('        if (this.hasItemsToSend() || !this.gridProxy.isActive() || !this.craftingList.contains(patternDetails)) {\n'
+     '            return false;\n'
+     '        }\n',
      '        if (this.isCraftingLocked()) {\n'
      '            return false;\n'
      '        }\n'
-     '        final boolean pushed = this.pushPatternUnlocked(patternDetails, table);\n'
-     '        if (pushed) {\n'
-     '            this.onPatternPushed(patternDetails);\n'
-     '        }\n'
-     '        return pushed;\n'
-     '    }\n'
-     '\n'
-     '    private boolean pushPatternUnlocked(final ICraftingPatternDetails patternDetails,\n'
-     '            final CraftingInventory table) {\n', 1),
+     '        if (this.hasItemsToSend() || !this.gridProxy.isActive() || !this.craftingList.contains(patternDetails)) {\n'
+     '            return false;\n'
+     '        }\n', 1),
+    ('                    if (cm.pushPattern(patternDetails, table, s.getOpposite())) {\n'
+     '                        return true;\n'
+     '                    }\n',
+     '                    if (cm.pushPattern(patternDetails, table, s.getOpposite())) {\n'
+     '                        this.onPatternPushed(patternDetails);\n'
+     '                        return true;\n'
+     '                    }\n', 1),
+    ('                    this.pushItemsOut(possibleDirections);\n'
+     '                    return true;\n',
+     '                    this.pushItemsOut(possibleDirections);\n'
+     '                    this.onPatternPushed(patternDetails);\n'
+     '                    return true;\n', 1),
     ('    public boolean isBusy() {\n        if (this.hasItemsToSend()) {\n            return true;\n        }\n',
      '    public boolean isBusy() {\n        if (this.isCraftingLocked()) {\n            return true;\n        }\n'
      '        if (this.hasItemsToSend()) {\n            return true;\n        }\n', 1),
